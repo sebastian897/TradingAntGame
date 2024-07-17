@@ -10,12 +10,12 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/gorilla/sessions"
+	"github.com/srinathgs/mysqlstore"
 )
 
 const keyServerAddr = "serverAddr"
 
-var store = sessions.NewFilesystemStore("sess")
+var store *mysqlstore.MySQLStore
 
 func handleRoot(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -64,11 +64,29 @@ func handleTrade(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, fmt.Sprint(r.Form))
 	io.WriteString(w, "</pre>")
 }
+
+func sessTest(w http.ResponseWriter, r *http.Request) {
+	session, err := store.Get(r, "foobar")
+	session.Values["bar"] = "baz"
+	session.Values["baz"] = "foo"
+	err = session.Save(r, w)
+	fmt.Printf("%#v\n", session)
+	fmt.Println(err)
+}
+
 func main() {
+	var err error
+	store, err = mysqlstore.NewMySQLStore("ants:REDACTED@tcp(127.0.0.1:3306)/ants?parseTime=true&loc=Local", "sess", "/", 3600, []byte("MySecret"))
+	if err != nil {
+		panic(err)
+	}
+	defer store.Close()
+	http.HandleFunc("/sesstest", sessTest)
+
 	http.HandleFunc("/", handleRoot)
 	http.HandleFunc("/trade", handleTrade)
 
-	err := http.ListenAndServe(":8080", nil)
+	err = http.ListenAndServe(":8080", nil)
 	if errors.Is(err, http.ErrServerClosed) {
 		fmt.Printf("server closed\n")
 	} else if err != nil {
