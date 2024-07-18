@@ -111,6 +111,8 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			errmsg = err.Error()
 		}
+	} else if r.URL.Query().Get("action") == "logout" {
+		session.Values["loggedInUserId"] = nil
 	}
 	err = session.Save(r, w)
 	if err != nil {
@@ -181,6 +183,10 @@ func handleTrade(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		session.Values["loggedInUserId"] = nil
 		http.Redirect(w, r, "/login", http.StatusFound)
+		err = session.Save(r, w)
+		if err != nil {
+			fmt.Println("session.save error = ", err)
+		}
 		return
 	}
 	var message string
@@ -210,6 +216,7 @@ func handleTrade(w http.ResponseWriter, r *http.Request) {
 		"</form>")
 	io.WriteString(w, "<h4>"+message+"</h4>")
 	io.WriteString(w, fmt.Sprintf("<br/>Total grass: %d", quantity))
+	io.WriteString(w, "<p><a href='/login?action=logout'>Logout</a></p>")
 }
 
 func main() {
