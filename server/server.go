@@ -38,20 +38,39 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "<h1>This is the ant game!!!!!!!!</h1>")
 	io.WriteString(w, "<p>Get your grass <a href='/trade'>here</a></p>")
 }
-func buyGrass(amt int, sess *sessions.Session) string {
-	sess.Values["totalGrass"] = amt + sess.Values["totalGrass"].(int)
-	return "Bought: " + fmt.Sprint(amt)
-}
-func sellGrass(amt int, sess *sessions.Session) string {
-	totalGrass := sess.Values["totalGrass"].(int)
-	if totalGrass >= amt {
-		sess.Values["totalGrass"] = totalGrass - amt
-		return "Sold: " + fmt.Sprint(amt)
-	} else {
-		return "Failed to sell"
+func buyGrass(user_id int, amt int) (string, int) {
+	var quantity int
+	_, err := db.ExecContext(dbctx, "insert into inventory_item(user_id,resource_id,quantity) values(?,1,?)"+
+		" on duplicate key update quantity = quantity + ?", user_id, amt, amt)
+	if err != nil {
+		panic(err)
 	}
+	err = db.QueryRowContext(dbctx, "SELECT quantity FROM inventory_item WHERE user_id = ? and resource_id = 1", user_id).Scan(&quantity)
+	if err != nil {
+		panic(err)
+	}
+	return "Bought: " + fmt.Sprint(amt), quantity
 }
-
+func sellGrass(user_id int, amt int) (string, int) {
+	var quantity int
+	err := db.QueryRowContext(dbctx, "SELECT quantity FROM inventory_item WHERE user_id = ? and resource_id = 1", user_id).Scan(&quantity)
+	if err == sql.ErrNoRows {
+		_, err = db.ExecContext(dbctx, "insert into inventory_item(user_id,resource_id,quantity) values(?,1,0)", user_id)
+		if err != nil {
+			panic(err)
+		}
+		return "Failed to sell", 0
+	}
+	if amt > quantity {
+		return "Failed to sell", quantity
+	}
+	_, err = db.ExecContext(dbctx, "insert into inventory_item(user_id,resource_id,quantity) values(?,1,?)"+
+		" on duplicate key update quantity = quantity - ?", user_id, amt, amt)
+	if err != nil {
+		panic(err)
+	}
+	return "Sold: " + fmt.Sprint(amt), quantity - amt
+}
 func Login(email string, password string, sess *sessions.Session) error {
 	var password_hash string
 	var id int
@@ -63,6 +82,20 @@ func Login(email string, password string, sess *sessions.Session) error {
 		panic(err)
 	}
 	sess.Values["loggedInUserId"] = id
+	fmt.Printf("Valid login id = %d\n", id)
+	return nil
+}
+
+func Register(email string, password string, name string, sess *sessions.Session) error {
+	var password_hash, _ = HashPassword(password)
+	var id int64
+	insertResult, err := db.ExecContext(dbctx, "INSERT into user(name,email,password) values(?,?,?)", name, email, password_hash)
+	if err != nil {
+		fmt.Printf("Invalid registeration %s\n", email)
+		return fmt.Errorf("email invalid")
+	}
+	id, _ = insertResult.LastInsertId()
+	sess.Values["loggedInUserId"] = int(id)
 	fmt.Printf("Valid login id = %d\n", id)
 	return nil
 }
@@ -85,15 +118,53 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if session.Values["loggedInUserId"] != nil {
 		http.Redirect(w, r, "/trade", http.StatusFound)
+		return
 	}
 	io.WriteString(w, "<h1>This is the ant game!!!!!!!!</h1>")
 	io.WriteString(w, "<p>Login please.</p>")
 	io.WriteString(w, "<form method='POST'>"+
-		"  <label>Email</label>"+
-		"  <input type='text' name='email'/>"+
-		"  <label>Password</label>\n"+
-		"  <input type='password' name='password' />"+
-		"  <button formaction='?action=login'>Login</button>"+
+		"  <p><label>Email</label>"+
+		"  <input type='text' name='email'/></p>"+
+		"  <p><label>Password</label>"+
+		"  <input type='password' name='password' /></p>"+
+		"  <p><button formaction='?action=login'>Login</button></p>"+
+		"</form>"+
+		"<p>Register <a href='/register'>here</a></p>")
+
+	io.WriteString(w, "<p style='color:red;'>"+errmsg+"</p>")
+}
+func handleRegister(w http.ResponseWriter, r *http.Request) {
+	session, _ := store.Get(r, "antsTrading")
+	var err error
+	var errmsg string
+	if r.URL.Query().Get("action") == "register" {
+		e := r.FormValue("email")
+		n := r.FormValue("name")
+		p := r.FormValue("password")
+		err = Register(e, p, n, session)
+		if err != nil {
+			errmsg = err.Error()
+		}
+
+	}
+	err = session.Save(r, w)
+	if err != nil {
+		fmt.Println("session.save error = ", err)
+	}
+	if session.Values["loggedInUserId"] != nil {
+		http.Redirect(w, r, "/trade", http.StatusFound)
+		return
+	}
+	io.WriteString(w, "<h1>This is the ant game!!!!!!!!</h1>")
+	io.WriteString(w, "<p>Register please.</p>")
+	io.WriteString(w, "<form method='POST'>"+
+		"  <p><label>Email</label>"+
+		"  <input type='text' name='email'/></p>"+
+		"  <p><label>Name</label>"+
+		"  <input type='text' name='name'/></p>"+
+		"  <p><label>Password</label>"+
+		"  <input type='password' name='password' /></p>"+
+		"  <p><button formaction='?action=register'>Register</button></p>"+
 		"</form>")
 	io.WriteString(w, "<p style='color:red;'>"+errmsg+"</p>")
 }
@@ -101,27 +172,28 @@ func handleTrade(w http.ResponseWriter, r *http.Request) {
 	session, _ := store.Get(r, "antsTrading")
 	if session.Values["loggedInUserId"] == nil {
 		http.Redirect(w, r, "/login", http.StatusFound)
+		return
 	}
+	user_id := session.Values["loggedInUserId"].(int)
 	var err error
 	var username string
-	err = db.QueryRowContext(dbctx, "SELECT name FROM user WHERE id = ?", session.Values["loggedInUserId"]).Scan(&username)
+	err = db.QueryRowContext(dbctx, "SELECT name FROM user WHERE id = ?", user_id).Scan(&username)
 	if err != nil {
 		session.Values["loggedInUserId"] = nil
 		http.Redirect(w, r, "/login", http.StatusFound)
-	}
-	if session.Values["totalGrass"] == nil {
-		session.Values["totalGrass"] = 0
+		return
 	}
 	var message string
+	var quantity int
 	if r.URL.Query().Get("action") == "buy_grass" {
 		q, err := strconv.Atoi(r.FormValue("quantityOfGrass"))
 		if err == nil {
-			message = buyGrass(q, session)
+			message, quantity = buyGrass(user_id, q)
 		}
 	} else if r.URL.Query().Get("action") == "sell_grass" {
 		q, err := strconv.Atoi(r.FormValue("quantityOfGrass"))
 		if err == nil {
-			message = sellGrass(q, session)
+			message, quantity = sellGrass(user_id, q)
 		}
 	}
 	err = session.Save(r, w)
@@ -137,7 +209,7 @@ func handleTrade(w http.ResponseWriter, r *http.Request) {
 		"  <button formaction='?action=sell_grass'>Sell</button>"+
 		"</form>")
 	io.WriteString(w, "<h4>"+message+"</h4>")
-	io.WriteString(w, "<h4>Total grass: "+fmt.Sprint(session.Values["totalGrass"])+"</h4>")
+	io.WriteString(w, fmt.Sprintf("<br/>Total grass: %d", quantity))
 }
 
 func main() {
@@ -158,6 +230,7 @@ func main() {
 	http.HandleFunc("/", handleRoot)
 	http.HandleFunc("/trade", handleTrade)
 	http.HandleFunc("/login", handleLogin)
+	http.HandleFunc("/register", handleRegister)
 
 	err = http.ListenAndServe(":8080", nil)
 	if errors.Is(err, http.ErrServerClosed) {
