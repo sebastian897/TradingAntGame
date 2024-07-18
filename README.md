@@ -11,6 +11,6 @@
     use sqldatabase for session storage ✔
 
 3. Add Login - To keep inventory
-    use sqldatabase
+    use sqldatabase ✔
 
 4. Deploy to schonrocks.com production server
