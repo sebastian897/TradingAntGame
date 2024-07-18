@@ -16,9 +16,23 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/sessions"
 	"github.com/srinathgs/mysqlstore"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var store *mysqlstore.MySQLStore
+var db *sql.DB
+var dbctx = context.Background()
+
+func HashPassword(password string) (string, error) {
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
+	return string(bytes), err
+}
+
+// VerifyPassword verifies if the given password matches the stored hash.
+func VerifyPassword(password, hash string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	return err == nil
+}
 
 func handleRoot(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "<h1>This is the ant game!!!!!!!!</h1>")
@@ -38,22 +52,13 @@ func sellGrass(amt int, sess *sessions.Session) string {
 	}
 }
 
-func Login(username string, password string, sess *sessions.Session) error {
-	db, err := sql.Open("mysql", "ants:REDACTED@tcp(127.0.0.1:3306)/ants")
-	if err != nil {
-		panic(err)
-	}
-	// See "Important settings" section.
-	db.SetConnMaxLifetime(time.Minute * 3)
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(10)
-	ctx, stop := context.WithCancel(context.Background())
-	defer stop()
+func Login(email string, password string, sess *sessions.Session) error {
+	var password_hash string
 	var id int
-	err = db.QueryRowContext(ctx, "SELECT id FROM user WHERE name = ? and password = ?", username, password).Scan(&id)
-	if err == sql.ErrNoRows {
-		fmt.Printf("Invalid login %s\n", username)
-		return fmt.Errorf("username or password invalid")
+	err := db.QueryRowContext(dbctx, "SELECT id,password FROM user WHERE email = ?", email).Scan(&id, &password_hash)
+	if err == sql.ErrNoRows || !VerifyPassword(password, password_hash) {
+		fmt.Printf("Invalid login %s\n", email)
+		return fmt.Errorf("email or password invalid")
 	} else if err != nil {
 		panic(err)
 	}
@@ -67,7 +72,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var errmsg string
 	if r.URL.Query().Get("action") == "login" {
-		u := r.FormValue("username")
+		u := r.FormValue("email")
 		p := r.FormValue("password")
 		err = Login(u, p, session)
 		if err != nil {
@@ -84,10 +89,10 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "<h1>This is the ant game!!!!!!!!</h1>")
 	io.WriteString(w, "<p>Login please.</p>")
 	io.WriteString(w, "<form method='POST'>"+
-		"  <label>Username</label>"+
-		"  <input type='text' name='username'/>"+
+		"  <label>Email</label>"+
+		"  <input type='text' name='email'/>"+
 		"  <label>Password</label>\n"+
-		"  <input type='text' name='password' />"+
+		"  <input type='password' name='password' />"+
 		"  <button formaction='?action=login'>Login</button>"+
 		"</form>")
 	io.WriteString(w, "<p style='color:red;'>"+errmsg+"</p>")
@@ -95,6 +100,13 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 func handleTrade(w http.ResponseWriter, r *http.Request) {
 	session, _ := store.Get(r, "antsTrading")
 	if session.Values["loggedInUserId"] == nil {
+		http.Redirect(w, r, "/login", http.StatusFound)
+	}
+	var err error
+	var username string
+	err = db.QueryRowContext(dbctx, "SELECT name FROM user WHERE id = ?", session.Values["loggedInUserId"]).Scan(&username)
+	if err != nil {
+		session.Values["loggedInUserId"] = nil
 		http.Redirect(w, r, "/login", http.StatusFound)
 	}
 	if session.Values["totalGrass"] == nil {
@@ -112,12 +124,11 @@ func handleTrade(w http.ResponseWriter, r *http.Request) {
 			message = sellGrass(q, session)
 		}
 	}
-	err := session.Save(r, w)
+	err = session.Save(r, w)
 	if err != nil {
 		fmt.Println("session.save error = ", err)
 	}
-	io.WriteString(w, "<h1>hello Bozo </h1>"+
-		"<p>You are 69 years old</p>"+
+	io.WriteString(w, fmt.Sprintf("<h1>hello %s </h1>", username)+
 		"<p>Are you trading today?</p>")
 	io.WriteString(w, "<form method='POST'>"+
 		"  <label>Buy or Sell Grass Quantity</label>"+
@@ -136,6 +147,13 @@ func main() {
 		panic(err)
 	}
 	defer store.Close()
+	db, err = sql.Open("mysql", "ants:REDACTED@tcp(127.0.0.1:3306)/ants")
+	if err != nil {
+		panic(err)
+	}
+	db.SetConnMaxLifetime(time.Minute * 3)
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(10)
 
 	http.HandleFunc("/", handleRoot)
 	http.HandleFunc("/trade", handleTrade)
