@@ -21,12 +21,14 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var store *mysqlstore.MySQLStore
-var db *sql.DB
-var dbctx = context.Background()
+var (
+	store *mysqlstore.MySQLStore
+	db    *sql.DB
+	dbctx = context.Background()
+)
 
 func HashPassword(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 11)
 	return string(bytes), err
 }
 
@@ -63,6 +65,7 @@ func buyGrass(user_id int, amt int) (string, int) {
 	quantity := getResourceQuantity(user_id, GRASS)
 	return "Bought: " + fmt.Sprint(amt), quantity
 }
+
 func sellGrass(user_id int, amt int) (string, int) {
 	quantity := getResourceQuantity(user_id, GRASS)
 	if amt > quantity {
@@ -74,6 +77,7 @@ func sellGrass(user_id int, amt int) (string, int) {
 	}
 	return "Sold: " + fmt.Sprint(amt), quantity - amt
 }
+
 func Login(email string, password string, sess *sessions.Session) error {
 	var password_hash string
 	var id int
@@ -90,7 +94,7 @@ func Login(email string, password string, sess *sessions.Session) error {
 }
 
 func Register(email string, password string, name string, sess *sessions.Session) error {
-	var password_hash, _ = HashPassword(password)
+	password_hash, _ := HashPassword(password)
 	var id int64
 	if !validEmail(email) {
 		return fmt.Errorf("email invalid")
@@ -107,10 +111,12 @@ func Register(email string, password string, name string, sess *sessions.Session
 	fmt.Printf("Valid login id = %d\n", id)
 	return nil
 }
+
 func validEmail(email string) bool {
 	_, err := mail.ParseAddress(email)
 	return err == nil
 }
+
 func validatePassword(password string) error {
 	if len(password) < 8 {
 		return fmt.Errorf("password too short (min 8 characters)")
@@ -147,8 +153,8 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	component := templates.Login(errmsg)
 	component.Render(context.Background(), w)
-
 }
+
 func handleRegister(w http.ResponseWriter, r *http.Request) {
 	session, _ := store.Get(r, "antsTrading")
 	var err error
