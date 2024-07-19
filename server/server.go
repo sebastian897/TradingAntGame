@@ -100,7 +100,7 @@ func Register(email string, password string, name string, sess *sessions.Session
 	}
 	insertResult, err := db.ExecContext(dbctx, "INSERT into user(name,email,password) values(?,?,?)", name, email, password_hash)
 	if err != nil {
-		return fmt.Errorf("email invalid")
+		return fmt.Errorf("failed to create account")
 	}
 	id, _ = insertResult.LastInsertId()
 	sess.Values["loggedInUserId"] = int(id)
@@ -142,7 +142,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		panic(err)
 	}
 	if session.Values["loggedInUserId"] != nil {
-		http.Redirect(w, r, "/trade", http.StatusFound)
+		http.Redirect(w, r, "/seb/ants/trade", http.StatusFound)
 		return
 	}
 	component := templates.Login(errmsg)
@@ -168,7 +168,7 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("session.save error = ", err)
 	}
 	if session.Values["loggedInUserId"] != nil {
-		http.Redirect(w, r, "/trade", http.StatusFound)
+		http.Redirect(w, r, "/seb/ants/trade", http.StatusFound)
 		return
 	}
 	component := templates.Register(errmsg)
@@ -191,7 +191,7 @@ func buySellOperator(r *http.Request, user_id int, bsGrass func(int, int) (strin
 func handleTrade(w http.ResponseWriter, r *http.Request) {
 	session, _ := store.Get(r, "antsTrading")
 	if session.Values["loggedInUserId"] == nil {
-		http.Redirect(w, r, "/login", http.StatusFound)
+		http.Redirect(w, r, "/seb/ants/login", http.StatusFound)
 		return
 	}
 	user_id := session.Values["loggedInUserId"].(int)
@@ -200,7 +200,7 @@ func handleTrade(w http.ResponseWriter, r *http.Request) {
 	err = db.QueryRowContext(dbctx, "SELECT name FROM user WHERE id = ?", user_id).Scan(&username)
 	if err != nil {
 		session.Values["loggedInUserId"] = nil
-		http.Redirect(w, r, "/login", http.StatusFound)
+		http.Redirect(w, r, "/seb/ants/login", http.StatusFound)
 		err = session.Save(r, w)
 		if err != nil {
 			fmt.Println("session.save error = ", err)
@@ -239,12 +239,12 @@ func main() {
 	db.SetMaxOpenConns(10)
 	db.SetMaxIdleConns(10)
 
-	http.HandleFunc("/", handleRoot)
-	http.HandleFunc("/trade", handleTrade)
-	http.HandleFunc("/login", handleLogin)
-	http.HandleFunc("/register", handleRegister)
+	http.HandleFunc("/seb/ants/", handleRoot)
+	http.HandleFunc("/seb/ants/trade", handleTrade)
+	http.HandleFunc("/seb/ants/login", handleLogin)
+	http.HandleFunc("/seb/ants/register", handleRegister)
 
-	err = http.ListenAndServe("localhost:8080", nil)
+	err = http.ListenAndServe("127.0.0.1:8080", nil)
 	if errors.Is(err, http.ErrServerClosed) {
 		fmt.Printf("server closed\n")
 	} else if err != nil {

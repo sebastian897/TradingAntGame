@@ -23,7 +23,7 @@ templ Page() {
 templ Root() {
 	@Page() {
 		<h1>This is the ant game!!!!!!!!</h1>
-		<p>Get your grass <a href="/trade">here</a></p>
+		<p>Get your grass <a href="/seb/ants/trade">here</a></p>
 	}
 }
 
@@ -42,7 +42,7 @@ templ Login(errmsg string) {
 			</div>
 			<button class="btn btn-primary" formaction="?action=login">Login</button>
 		</form>
-		<p>Register <a href="/register">here</a></p>
+		<p>Register <a href="/seb/ants/register">here</a></p>
 		<p style="color:red;">{ errmsg }</p>
 	}
 }
@@ -61,7 +61,7 @@ templ Trade(username string, message string, quantity int) {
 		</form>
 		<h4>{ message }</h4>
 		<p>Total grass: { fmt.Sprintf("%d", quantity) }</p>
-		<p><a href="/login?action=logout">Logout</a></p>
+		<p><a href="/seb/ants/login?action=logout">Logout</a></p>
 	}
 }
 
