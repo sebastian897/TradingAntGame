@@ -7,11 +7,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strconv"
 	"time"
+
+	"ants/server/templates"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/sessions"
@@ -34,10 +35,6 @@ func VerifyPassword(password, hash string) bool {
 	return err == nil
 }
 
-func handleRoot(w http.ResponseWriter, r *http.Request) {
-	io.WriteString(w, "<h1>This is the ant game!!!!!!!!</h1>")
-	io.WriteString(w, "<p>Get your grass <a href='/trade'>here</a></p>")
-}
 func buyGrass(user_id int, amt int) (string, int) {
 	var quantity int
 	_, err := db.ExecContext(dbctx, "insert into inventory_item(user_id,resource_id,quantity) values(?,1,?)"+
@@ -100,6 +97,11 @@ func Register(email string, password string, name string, sess *sessions.Session
 	return nil
 }
 
+func handleRoot(w http.ResponseWriter, r *http.Request) {
+	component := templates.Root()
+	component.Render(context.Background(), w)
+}
+
 func handleLogin(w http.ResponseWriter, r *http.Request) {
 	session, _ := store.Get(r, "antsTrading")
 	var err error
@@ -122,18 +124,9 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/trade", http.StatusFound)
 		return
 	}
-	io.WriteString(w, "<h1>This is the ant game!!!!!!!!</h1>")
-	io.WriteString(w, "<p>Login please.</p>")
-	io.WriteString(w, "<form method='POST'>"+
-		"  <p><label>Email</label>"+
-		"  <input type='text' name='email'/></p>"+
-		"  <p><label>Password</label>"+
-		"  <input type='password' name='password' /></p>"+
-		"  <p><button formaction='?action=login'>Login</button></p>"+
-		"</form>"+
-		"<p>Register <a href='/register'>here</a></p>")
+	component := templates.Login(errmsg)
+	component.Render(context.Background(), w)
 
-	io.WriteString(w, "<p style='color:red;'>"+errmsg+"</p>")
 }
 func handleRegister(w http.ResponseWriter, r *http.Request) {
 	session, _ := store.Get(r, "antsTrading")
@@ -157,18 +150,8 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/trade", http.StatusFound)
 		return
 	}
-	io.WriteString(w, "<h1>This is the ant game!!!!!!!!</h1>")
-	io.WriteString(w, "<p>Register please.</p>")
-	io.WriteString(w, "<form method='POST'>"+
-		"  <p><label>Email</label>"+
-		"  <input type='text' name='email'/></p>"+
-		"  <p><label>Name</label>"+
-		"  <input type='text' name='name'/></p>"+
-		"  <p><label>Password</label>"+
-		"  <input type='password' name='password' /></p>"+
-		"  <p><button formaction='?action=register'>Register</button></p>"+
-		"</form>")
-	io.WriteString(w, "<p style='color:red;'>"+errmsg+"</p>")
+	component := templates.Register(errmsg)
+	component.Render(context.Background(), w)
 }
 func handleTrade(w http.ResponseWriter, r *http.Request) {
 	session, _ := store.Get(r, "antsTrading")
@@ -206,17 +189,8 @@ func handleTrade(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fmt.Println("session.save error = ", err)
 	}
-	io.WriteString(w, fmt.Sprintf("<h1>hello %s </h1>", username)+
-		"<p>Are you trading today?</p>")
-	io.WriteString(w, "<form method='POST'>"+
-		"  <label>Buy or Sell Grass Quantity</label>"+
-		"  <input type='text' name='quantityOfGrass' />"+
-		"  <button formaction='?action=buy_grass'>Buy</button>"+
-		"  <button formaction='?action=sell_grass'>Sell</button>"+
-		"</form>")
-	io.WriteString(w, "<h4>"+message+"</h4>")
-	io.WriteString(w, fmt.Sprintf("<br/>Total grass: %d", quantity))
-	io.WriteString(w, "<p><a href='/login?action=logout'>Logout</a></p>")
+	component := templates.Trade(username, message, quantity)
+	component.Render(context.Background(), w)
 }
 
 func main() {
@@ -239,7 +213,7 @@ func main() {
 	http.HandleFunc("/login", handleLogin)
 	http.HandleFunc("/register", handleRegister)
 
-	err = http.ListenAndServe(":8080", nil)
+	err = http.ListenAndServe("localhost:8080", nil)
 	if errors.Is(err, http.ErrServerClosed) {
 		fmt.Printf("server closed\n")
 	} else if err != nil {
