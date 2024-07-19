@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/mail"
 	"os"
 	"strconv"
 	"time"
@@ -35,34 +36,39 @@ func VerifyPassword(password, hash string) bool {
 	return err == nil
 }
 
+func getResourceQuantity(user_id int, resource_id int) int {
+	var quantity int = 0
+	err := db.QueryRowContext(dbctx, "SELECT quantity FROM inventory_item WHERE user_id = ? and resource_id = ?", user_id, resource_id).Scan(&quantity)
+	if err == sql.ErrNoRows {
+		_, err2 := db.ExecContext(dbctx, "insert into inventory_item(user_id,resource_id,quantity) values(?,?,?)", user_id, resource_id, quantity)
+		if err2 != nil {
+			panic(err)
+		}
+	} else if err != nil {
+		panic(err)
+	}
+	return quantity
+}
+
+const (
+	GRASS = 1
+)
+
 func buyGrass(user_id int, amt int) (string, int) {
-	var quantity int
 	_, err := db.ExecContext(dbctx, "insert into inventory_item(user_id,resource_id,quantity) values(?,1,?)"+
 		" on duplicate key update quantity = quantity + ?", user_id, amt, amt)
 	if err != nil {
 		panic(err)
 	}
-	err = db.QueryRowContext(dbctx, "SELECT quantity FROM inventory_item WHERE user_id = ? and resource_id = 1", user_id).Scan(&quantity)
-	if err != nil {
-		panic(err)
-	}
+	quantity := getResourceQuantity(user_id, GRASS)
 	return "Bought: " + fmt.Sprint(amt), quantity
 }
 func sellGrass(user_id int, amt int) (string, int) {
-	var quantity int
-	err := db.QueryRowContext(dbctx, "SELECT quantity FROM inventory_item WHERE user_id = ? and resource_id = 1", user_id).Scan(&quantity)
-	if err == sql.ErrNoRows {
-		_, err = db.ExecContext(dbctx, "insert into inventory_item(user_id,resource_id,quantity) values(?,1,0)", user_id)
-		if err != nil {
-			panic(err)
-		}
-		return "Failed to sell", 0
-	}
+	quantity := getResourceQuantity(user_id, GRASS)
 	if amt > quantity {
 		return "Failed to sell", quantity
 	}
-	_, err = db.ExecContext(dbctx, "insert into inventory_item(user_id,resource_id,quantity) values(?,1,?)"+
-		" on duplicate key update quantity = quantity - ?", user_id, amt, amt)
+	_, err := db.ExecContext(dbctx, "update inventory_item set quantity = quantity - ? where user_id = ? and resource_id = 1", amt, user_id)
 	if err != nil {
 		panic(err)
 	}
@@ -86,14 +92,29 @@ func Login(email string, password string, sess *sessions.Session) error {
 func Register(email string, password string, name string, sess *sessions.Session) error {
 	var password_hash, _ = HashPassword(password)
 	var id int64
+	if !validEmail(email) {
+		return fmt.Errorf("email invalid")
+	}
+	if err := validatePassword(password); err != nil {
+		return err
+	}
 	insertResult, err := db.ExecContext(dbctx, "INSERT into user(name,email,password) values(?,?,?)", name, email, password_hash)
 	if err != nil {
-		fmt.Printf("Invalid registeration %s\n", email)
 		return fmt.Errorf("email invalid")
 	}
 	id, _ = insertResult.LastInsertId()
 	sess.Values["loggedInUserId"] = int(id)
 	fmt.Printf("Valid login id = %d\n", id)
+	return nil
+}
+func validEmail(email string) bool {
+	_, err := mail.ParseAddress(email)
+	return err == nil
+}
+func validatePassword(password string) error {
+	if len(password) < 8 {
+		return fmt.Errorf("password too short (min 8 characters)")
+	}
 	return nil
 }
 
@@ -118,7 +139,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	err = session.Save(r, w)
 	if err != nil {
-		fmt.Println("session.save error = ", err)
+		panic(err)
 	}
 	if session.Values["loggedInUserId"] != nil {
 		http.Redirect(w, r, "/trade", http.StatusFound)
@@ -153,6 +174,20 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 	component := templates.Register(errmsg)
 	component.Render(context.Background(), w)
 }
+
+func buySellOperator(r *http.Request, user_id int, bsGrass func(int, int) (string, int)) (string, int) {
+	var message string
+	var quantity int
+	q, err := strconv.Atoi(r.FormValue("quantityOfGrass"))
+	if err == nil {
+		message, quantity = bsGrass(user_id, q)
+	} else {
+		message = "Invalid quantity"
+		quantity = getResourceQuantity(user_id, GRASS)
+	}
+	return message, quantity
+}
+
 func handleTrade(w http.ResponseWriter, r *http.Request) {
 	session, _ := store.Get(r, "antsTrading")
 	if session.Values["loggedInUserId"] == nil {
@@ -175,15 +210,11 @@ func handleTrade(w http.ResponseWriter, r *http.Request) {
 	var message string
 	var quantity int
 	if r.URL.Query().Get("action") == "buy_grass" {
-		q, err := strconv.Atoi(r.FormValue("quantityOfGrass"))
-		if err == nil {
-			message, quantity = buyGrass(user_id, q)
-		}
+		message, quantity = buySellOperator(r, user_id, buyGrass)
 	} else if r.URL.Query().Get("action") == "sell_grass" {
-		q, err := strconv.Atoi(r.FormValue("quantityOfGrass"))
-		if err == nil {
-			message, quantity = sellGrass(user_id, q)
-		}
+		message, quantity = buySellOperator(r, user_id, sellGrass)
+	} else {
+		quantity = getResourceQuantity(user_id, GRASS)
 	}
 	err = session.Save(r, w)
 	if err != nil {
