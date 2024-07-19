@@ -8,6 +8,7 @@ require (
 )
 
 require (
+	github.com/a-h/templ v0.2.747
 	github.com/go-sql-driver/mysql v1.8.1
 	golang.org/x/crypto v0.25.0
 )
