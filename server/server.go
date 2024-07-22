@@ -98,6 +98,9 @@ func Register(email string, password string, name string, sess *sessions.Session
 	if err := validatePassword(password); err != nil {
 		return err
 	}
+	if err := validateName(name); err != nil {
+		return err
+	}
 	insertResult, err := db.ExecContext(dbctx, "INSERT into user(name,email,password) values(?,?,?)", name, email, password_hash)
 	if err != nil {
 		return fmt.Errorf("failed to create account")
@@ -114,6 +117,12 @@ func validEmail(email string) bool {
 func validatePassword(password string) error {
 	if len(password) < 8 {
 		return fmt.Errorf("password too short (min 8 characters)")
+	}
+	return nil
+}
+func validateName(name string) error {
+	if len(name) < 3 {
+		return fmt.Errorf("name too short (min 3 characters)")
 	}
 	return nil
 }
@@ -179,6 +188,9 @@ func buySellOperator(r *http.Request, user_id int, bsGrass func(int, int) (strin
 	var message string
 	var quantity int
 	q, err := strconv.Atoi(r.FormValue("quantityOfGrass"))
+	if q < 0 {
+		err = fmt.Errorf("negative quantity")
+	}
 	if err == nil {
 		message, quantity = bsGrass(user_id, q)
 	} else {
