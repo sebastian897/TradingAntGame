@@ -13,4 +13,4 @@
 3. Add Login - To keep inventory
     use sqldatabase ✔
 
-4. Deploy to schonrocks.com production server
+4. Deploy to schonrocks.com production server ✔
