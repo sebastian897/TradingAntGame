@@ -246,7 +246,7 @@ func main() {
 	var err error
 	fileStore := sessions.NewFilesystemStore("sess", []byte("MySecret"))
 	fileStore.Options = &sessions.Options{
-		Path:     "/sebe/ants",
+		Path:     "/seb/ants/",
 		Domain:   "",
 		MaxAge:   3600,
 		Secure:   true,
