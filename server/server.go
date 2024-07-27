@@ -17,12 +17,11 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/sessions"
-	"github.com/srinathgs/mysqlstore"
 	"golang.org/x/crypto/bcrypt"
 )
 
 var (
-	store *mysqlstore.MySQLStore
+	store sessions.Store
 	db    *sql.DB
 	dbctx = context.Background()
 )
@@ -44,7 +43,7 @@ func getResourceQuantity(user_id int, resource_id int) int {
 	if err == sql.ErrNoRows {
 		_, err2 := db.ExecContext(dbctx, "insert into inventory_item(user_id,resource_id,quantity) values(?,?,?)", user_id, resource_id, quantity)
 		if err2 != nil {
-			panic(err)
+			panic(err2)
 		}
 	} else if err != nil {
 		panic(err)
@@ -126,6 +125,7 @@ func validatePassword(password string) error {
 	}
 	return nil
 }
+
 func validateName(name string) error {
 	if len(name) < 3 {
 		return fmt.Errorf("name too short (min 3 characters)")
@@ -244,11 +244,17 @@ func handleTrade(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	var err error
-	store, err = mysqlstore.NewMySQLStore("ants:REDACTED@tcp(127.0.0.1:3306)/ants?parseTime=true&loc=Local", "sess", "/", 3600, []byte("MySecret"))
-	if err != nil {
-		panic(err)
+	fileStore := sessions.NewFilesystemStore("sess", []byte("MySecret"))
+	fileStore.Options = &sessions.Options{
+		Path:     "/sebe/ants",
+		Domain:   "",
+		MaxAge:   3600,
+		Secure:   true,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
 	}
-	defer store.Close()
+	store = fileStore // global interface
+	
 	db, err = sql.Open("mysql", "ants:REDACTED@tcp(127.0.0.1:3306)/ants")
 	if err != nil {
 		panic(err)
