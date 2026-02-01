@@ -1,14 +1,14 @@
 module ants/server
 
-go 1.22.5
+go 1.24.0
 
-require github.com/gorilla/sessions v1.3.0
+require github.com/gorilla/sessions v1.4.0
 
 require (
-	github.com/a-h/templ v0.2.747
-	github.com/go-sql-driver/mysql v1.8.1
+	github.com/a-h/templ v0.3.977
+	github.com/go-sql-driver/mysql v1.9.3
 	github.com/joho/godotenv v1.5.1
-	golang.org/x/crypto v0.25.0
+	golang.org/x/crypto v0.47.0
 )
 
 require (
